@@ -18,8 +18,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run test && npm run build && npm run smoke:electron",
-    "pack:win": "npm run build && electron-packager . \"Private Memos\" --platform=win32 --arch=x64 --out=release-local-app --overwrite --electron-version=43.0.0 --icon=assets/private-memos.ico --ignore=\"^/(src|electron|scripts|android|release[^/]*|coverage|\\.git|\\.tmp|\\.agents|\\.codex|Private Memos Data)\" --ignore=\"\\.(zip|apk|log|tsbuildinfo)$\"",
-    "dist:win": "npm run build && electron-builder --win --x64"
+    "pack:win": "npm run build && node scripts/prepare-desktop-package.mjs && electron-packager .tmp/desktop-package \"Private Memos\" --platform=win32 --arch=x64 --out=release-local-app --overwrite --electron-version=43.0.0 --icon=assets/private-memos.ico --prune=true",
+    "dist:win": "npm run build && node scripts/prepare-desktop-package.mjs && electron-builder --projectDir .tmp/desktop-package --win --x64"
   },
   "build": {
     "appId": "com.privatememos.desktop",
