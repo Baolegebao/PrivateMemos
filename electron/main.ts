@@ -159,7 +159,7 @@ function createPinnedNoteWindow(payload: { title: string; body: string }) {
 
 function buildPinnedNoteHtml({ title, body }: { title: string; body: string }) {
   const content = escapeHtml(body)
-    .replace(/!\[图片\]\((data:image\/[^)]+)\)/g, '<img src="$1" alt="笔记图片" />')
+    .replace(/!\[图片\]\(((?:data:image\/|file:\/\/\/)[^)]+)\)/g, '<img src="$1" alt="笔记图片" />')
     .replace(/\n/g, '<br />');
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     body{margin:0;padding:14px;font-family:Inter,"Microsoft YaHei",sans-serif;background:#1c2d23;color:#f4efd8;}

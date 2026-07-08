@@ -1219,6 +1219,11 @@ function ClipboardPanel({ state, setState, onCopyItem, onOpenDirectory }: StateP
     setState((current) => ({ ...current, clipboardSaveDirectory: directory, clipboardLastError: '' }));
   }
 
+  async function pinPreviewImage(item: ClipboardEntry) {
+    const src = toFileUrl(item.filePath ?? item.content);
+    await window.assistantApp?.window?.pinNote?.({ title: '剪贴板图片', body: `![图片](${src})` });
+  }
+
   return (
     <section className="panel full-panel clipboard-page">
       <div className="pane-header">
@@ -1269,6 +1274,14 @@ function ClipboardPanel({ state, setState, onCopyItem, onOpenDirectory }: StateP
                 }}
               >
                 {previewCopied ? <Check size={16} /> : <Copy size={16} />}
+              </button>
+              <button
+                className="toolbar-button icon-only"
+                type="button"
+                aria-label="钉住图片"
+                onClick={() => { void pinPreviewImage(previewImage); setPreviewImage(undefined); }}
+              >
+                <Pin size={16} />
               </button>
               <button className="toolbar-button" type="button" onClick={() => setPreviewImage(undefined)}>关闭</button>
             </div>
