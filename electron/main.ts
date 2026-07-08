@@ -158,15 +158,26 @@ function createPinnedNoteWindow(payload: { title: string; body: string }) {
 }
 
 function buildPinnedNoteHtml({ title, body }: { title: string; body: string }) {
-  const content = escapeHtml(body)
-    .replace(/!\[图片\]\(((?:data:image\/|file:\/\/\/)[^)]+)\)/g, '<img src="$1" alt="笔记图片" />')
-    .replace(/\n/g, '<br />');
+  const content = renderPinnedNoteContent(body);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     body{margin:0;padding:14px;font-family:Inter,"Microsoft YaHei",sans-serif;background:#1c2d23;color:#f4efd8;}
     h1{font-size:18px;margin:0 0 12px;color:#f4efd8;}
     main{white-space:normal;line-height:1.7;font-size:14px;user-select:text;}
     img{max-width:100%;border-radius:8px;margin:8px 0;display:block;}
   </style></head><body><h1>${escapeHtml(title || '无标题')}</h1><main>${content}</main></body></html>`;
+}
+
+export function renderPinnedNoteContent(body: string) {
+  const imagePattern = /!\[图片\]\(((?:data:image\/|file:\/\/\/)[^)]+)\)/g;
+  let cursor = 0;
+  const parts: string[] = [];
+  for (const match of body.matchAll(imagePattern)) {
+    parts.push(escapeHtml(body.slice(cursor, match.index)).replace(/\n/g, '<br />'));
+    parts.push(`<img src="${escapeHtml(match[1])}" alt="笔记图片" />`);
+    cursor = (match.index ?? 0) + match[0].length;
+  }
+  parts.push(escapeHtml(body.slice(cursor)).replace(/\n/g, '<br />'));
+  return parts.join('');
 }
 
 function escapeHtml(value: string) {
