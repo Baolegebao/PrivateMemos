@@ -1,6 +1,6 @@
-# Private Memos v0.3.1 Supabase 同步配置
+# Private Memos v0.3.0 Supabase 同步配置
 
-本文档用于配置 Private Memos v0.3.1 的电脑端和手机端自动同步。
+本文档用于配置 Private Memos v0.3.0 的电脑端和手机端自动同步。
 
 当前版本不需要注册软件账号，也不需要在客户端填写 Supabase 登录邮箱或密码。客户端只需要：
 

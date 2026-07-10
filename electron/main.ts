@@ -257,7 +257,7 @@ function ensureTray() {
 
 function createTrayIcon() {
   const iconPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'app.asar', 'assets', 'private-memos.ico')
+    ? path.join(app.getAppPath(), 'assets', 'private-memos.ico')
     : path.join(process.cwd(), 'assets', 'private-memos.ico');
   const icon = nativeImage.createFromPath(iconPath);
   if (!icon.isEmpty()) return icon.resize({ width: 16, height: 16 });

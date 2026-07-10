@@ -269,12 +269,19 @@ export function withCloudDeletionTombstones(previous: AppState, next: AppState, 
 }
 
 export async function buildCloudRecordRows(state: AppState, syncId: string, passphrase: string): Promise<Array<Record<string, unknown>>> {
-  const rows: Array<Record<string, unknown>> = [];
+  const rowsByKey = new Map<string, Record<string, unknown>>();
+  const appendRow = (row: Record<string, unknown>) => {
+    const key = `${row.sync_id}:${row.entity}:${row.record_id}`;
+    const current = rowsByKey.get(key);
+    if (!current || String(current.record_updated_at ?? '') <= String(row.record_updated_at ?? '')) {
+      rowsByKey.set(key, row);
+    }
+  };
 
   for (const { entity, key } of RECORD_COLLECTIONS) {
     for (const record of getCollection(state, key)) {
       const updatedAt = getRecordUpdatedAt(record);
-      rows.push({
+      appendRow({
         sync_id: syncId,
         entity,
         record_id: record.id,
@@ -286,7 +293,7 @@ export async function buildCloudRecordRows(state: AppState, syncId: string, pass
   }
 
   for (const deleted of state.cloudDeletedRecords ?? []) {
-    rows.push({
+    appendRow({
       sync_id: syncId,
       entity: deleted.entity,
       record_id: deleted.recordId,
@@ -296,7 +303,7 @@ export async function buildCloudRecordRows(state: AppState, syncId: string, pass
     });
   }
 
-  return rows;
+  return [...rowsByKey.values()];
 }
 
 export async function uploadCloudRecords(config: CloudSyncConfig, state: AppState): Promise<CloudSyncResult> {

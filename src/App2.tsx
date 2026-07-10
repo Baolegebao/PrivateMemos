@@ -1,5 +1,5 @@
 ﻿import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, Dispatch, DragEvent, MouseEvent, ReactNode, SetStateAction } from 'react';
+import type { CSSProperties, Dispatch, DragEvent, MouseEvent, ReactNode, SetStateAction, TouchEvent } from 'react';
 import {
   Apple,
   Armchair,
@@ -149,7 +149,7 @@ const modules: Array<{ key: ModuleKey; label: string; icon: typeof Home }> = [
   { key: 'settings', label: '设置', icon: Settings },
   { key: 'account', label: '账号', icon: User }
 ];
-const mobileModules = modules.filter((item) => ['home', 'calendar', 'notes', 'privateNotes', 'reminders', 'tasks', 'ledger'].includes(item.key));
+const mobileModules = modules.filter((item) => ['home', 'calendar', 'focus', 'notes', 'privateNotes', 'reminders', 'tasks', 'ledger'].includes(item.key));
 const mobileModuleKeys = new Set<ModuleKey>(mobileModules.map((item) => item.key));
 const WEEKDAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const LAST_LOGIN_ACCOUNT_KEY = 'personal-assistant-ai-last-login-account';
@@ -492,11 +492,14 @@ export function App() {
   const [globalQuery, setGlobalQuery] = useState('');
   const [notifiedReminderIds, setNotifiedReminderIds] = useState<string[]>([]);
   const [dialogRequest, setDialogRequest] = useState<DialogRequest | undefined>();
+  const [manualSyncing, setManualSyncing] = useState(false);
   const lastClipboardSignature = useRef('');
   const stateRef = useRef(state);
   const previousCloudState = useRef<AppState | undefined>();
   const cloudSyncBusy = useRef(false);
   const cloudSyncPending = useRef(false);
+  const pullRefreshStartY = useRef<number | undefined>();
+  const pullRefreshTriggered = useRef(false);
   const globalResults = useMemo(() => searchState(state, globalQuery), [state, globalQuery]);
   const cloudSyncChangeKey = useMemo(() => getCloudSyncChangeKey(state), [state]);
   const visibleModules = mobileApp ? mobileModules : modules;
@@ -629,6 +632,19 @@ export function App() {
         cloudSyncPending.current = false;
         window.setTimeout(() => void runCloudRecordSync(true), 0);
       }
+    }
+  }
+
+  async function refreshCloudSync() {
+    if (!hasCloudRuntime) {
+      await appAlert('请先填写 Supabase URL、publishable key 和同步口令。');
+      return;
+    }
+    setManualSyncing(true);
+    try {
+      await runCloudRecordSync(false, undefined, true);
+    } finally {
+      setManualSyncing(false);
     }
   }
 
@@ -809,6 +825,26 @@ export function App() {
   const text = getText(state.language);
   const showGlobalSearch = !mobileApp || activeModule === 'home';
 
+  function handlePullRefreshStart(event: TouchEvent<HTMLDivElement>) {
+    if (!mobileApp || window.scrollY > 0) return;
+    pullRefreshStartY.current = event.touches[0]?.clientY;
+    pullRefreshTriggered.current = false;
+  }
+
+  function handlePullRefreshMove(event: TouchEvent<HTMLDivElement>) {
+    const startY = pullRefreshStartY.current;
+    if (!mobileApp || startY === undefined || pullRefreshTriggered.current) return;
+    if ((event.touches[0]?.clientY ?? startY) - startY > 90) {
+      pullRefreshTriggered.current = true;
+      void refreshCloudSync();
+    }
+  }
+
+  function handlePullRefreshEnd() {
+    pullRefreshStartY.current = undefined;
+    pullRefreshTriggered.current = false;
+  }
+
   async function copyClipboardItem(item: ClipboardEntry): Promise<boolean> {
     try {
       if (item.type === 'image') {
@@ -845,17 +881,29 @@ export function App() {
 
   return (
     <TextContext.Provider value={text}>
-    <div className={`app-shell ${themeClass} ${mobileApp ? 'mobile-app-shell' : ''}`} style={buildThemeStyle(state)}>
+    <div
+      className={`app-shell ${themeClass} ${mobileApp ? 'mobile-app-shell' : ''}`}
+      style={buildThemeStyle(state)}
+      onTouchStart={handlePullRefreshStart}
+      onTouchMove={handlePullRefreshMove}
+      onTouchEnd={handlePullRefreshEnd}
+      onTouchCancel={handlePullRefreshEnd}
+    >
       <header className="topbar">
         <div className="brand-stack">
           <div className="brand">Private Memos</div>
-          <div className="brand-version">version:0.3.0</div>
+          <div className="brand-version">version:0.3.1</div>
         </div>
         {showGlobalSearch && <label className="global-search">
           <Search size={18} />
           <input value={globalQuery} onChange={(event) => setGlobalQuery(event.target.value)} placeholder={text.globalSearch} aria-label={text.globalSearch} />
         </label>}
         <div className="topbar-actions">
+          {hasCloudRuntime && (
+            <button className={manualSyncing ? 'topbar-icon-button active' : 'topbar-icon-button'} type="button" aria-label="刷新同步" onClick={() => void refreshCloudSync()}>
+              <RotateCcw size={18} />
+            </button>
+          )}
           {mobileApp && (
             <button className={activeModule === 'settings' ? 'topbar-icon-button active' : 'topbar-icon-button'} type="button" aria-label="设置" onClick={() => setActiveModule('settings')}>
               <Settings size={18} />
@@ -900,7 +948,7 @@ export function App() {
           {activeModule === 'tasks' && <TasksPanel state={state} setState={setState} />}
           {activeModule === 'ledger' && <LedgerPanel state={state} setState={setState} />}
           {activeModule === 'calendar' && <CalendarPanel state={state} setState={setState} targetDate={calendarTargetDate} />}
-          {activeModule === 'settings' && <SettingsPanelV2 state={state} setState={setState} cloudRuntime={cloudRuntime} setCloudRuntime={setCloudRuntime} mobileApp={mobileApp} />}
+          {activeModule === 'settings' && <SettingsPanelV2 state={state} setState={setState} cloudRuntime={cloudRuntime} setCloudRuntime={setCloudRuntime} mobileApp={mobileApp} onSyncRefresh={refreshCloudSync} cloudSyncing={manualSyncing} />}
           {!mobileApp && activeModule === 'account' && <AccountPanelV2 state={state} setState={setState} />}
         </section>
       </main>
@@ -2936,9 +2984,11 @@ interface SettingsPanelProps extends StatePanelProps {
   cloudRuntime: { passphrase: string };
   setCloudRuntime: Dispatch<SetStateAction<{ passphrase: string }>>;
   mobileApp?: boolean;
+  onSyncRefresh: () => Promise<void>;
+  cloudSyncing: boolean;
 }
 
-function SettingsPanelV2({ state, setState, cloudRuntime, setCloudRuntime, mobileApp = false }: SettingsPanelProps) {
+function SettingsPanelV2({ state, setState, cloudRuntime, setCloudRuntime, mobileApp = false, onSyncRefresh, cloudSyncing }: SettingsPanelProps) {
   const text = useText();
   const [dataStatus, setDataStatus] = useState<DataStoreStatus | undefined>();
   const [dataMessage, setDataMessage] = useState('');
@@ -3181,7 +3231,7 @@ function SettingsPanelV2({ state, setState, cloudRuntime, setCloudRuntime, mobil
       <div className="settings-grid">
         <div>
           <span>版本信息</span>
-          <strong>{mobileApp ? '0.3.0 安卓同步版' : '0.3.0 桌面端supabase自动同步版本'}</strong>
+          <strong>{mobileApp ? '0.3.1 安卓同步版' : '0.3.1 桌面端supabase自动同步版本'}</strong>
         </div>
         {!mobileApp && <label>
           <span>开机自启动</span>
@@ -3227,7 +3277,12 @@ function SettingsPanelV2({ state, setState, cloudRuntime, setCloudRuntime, mobil
         {state.clipboardShortcutLastError && <small className="danger-text">{state.clipboardShortcutLastError}</small>}
       </section>}
       <section className="sync-panel cloud-sync-settings">
-        <h2>云端同步</h2>
+        <div className="section-heading-row">
+          <h2>云端同步</h2>
+          <button className="toolbar-button icon-only" type="button" aria-label="刷新同步" onClick={() => void onSyncRefresh()}>
+            <RotateCcw size={16} />
+          </button>
+        </div>
         <p className="muted">只需要填写 Supabase URL、publishable key 和同步口令。电脑和手机使用同一个同步口令后，软件处于活跃状态时会自动逐条同步{mobileApp ? '。' : '，剪贴板集合仅保存在本机。'}</p>
         <div className="settings-grid">
           <label>
@@ -3245,7 +3300,7 @@ function SettingsPanelV2({ state, setState, cloudRuntime, setCloudRuntime, mobil
           </label>
         </div>
         <div className="sync-status">
-          <span>{state.cloudSyncLastSyncedAt ? `上次自动同步：${formatDateTime(state.cloudSyncLastSyncedAt)}` : '填写完整后自动同步'}</span>
+          <span>{cloudSyncing ? '正在同步...' : state.cloudSyncLastSyncedAt ? `上次自动同步：${formatDateTime(state.cloudSyncLastSyncedAt)}` : '填写完整后自动同步'}</span>
           {(cloudMessage || state.cloudSyncLastError) && <small>{cloudMessage || state.cloudSyncLastError}</small>}
         </div>
       </section>

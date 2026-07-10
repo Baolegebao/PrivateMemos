@@ -4,6 +4,7 @@ vi.mock('electron', () => ({
   app: {
     isPackaged: false,
     getPath: () => process.cwd(),
+    getAppPath: () => process.cwd(),
     requestSingleInstanceLock: () => true,
     on: vi.fn(),
     whenReady: () => new Promise(() => undefined)

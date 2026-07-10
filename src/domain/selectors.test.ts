@@ -14,7 +14,7 @@ import type { AppState } from './types';
 
 function baseState(): AppState {
   return {
-    displayName: '测试用户',
+    displayName: '本地用户',
     theme: 'system',
     fontScale: 1,
     notes: [],
@@ -142,12 +142,12 @@ describe('core selectors', () => {
   it('searches notes, private notes, reminders and tasks', () => {
     const state: AppState = {
       ...baseState(),
-      notes: [{ id: 'n1', body: '买牛奶', highlighted: false, createdAt: '2026-07-01T10:00:00.000Z', updatedAt: '2026-07-01T10:00:00.000Z' }],
+      notes: [{ id: 'n1', body: 'shared-key note', highlighted: false, createdAt: '2026-07-01T10:00:00.000Z', updatedAt: '2026-07-01T10:00:00.000Z' }],
       privateNotes: [
         {
           id: 'p1',
-          title: '项目计划',
-          body: 'MVP',
+          title: 'shared-key private',
+          body: 'body',
           highlighted: false,
           locked: false,
           createdAt: '2026-07-01T10:00:00.000Z',
@@ -158,17 +158,17 @@ describe('core selectors', () => {
         {
           id: 'r1',
           time: '2026-07-01T10:00:00.000Z',
-          memo: '项目复盘',
+          memo: 'shared-key reminder',
           repeat: 'none',
           acknowledged: false,
           createdAt: '2026-07-01T10:00:00.000Z',
           updatedAt: '2026-07-01T10:00:00.000Z'
         }
       ],
-      tasks: [createTask({ title: '写项目测试', type: 'normal' })]
+      tasks: [createTask({ title: 'shared-key task', type: 'normal' })]
     };
 
-    expect(searchState(state, '项目').map((item) => item.type)).toEqual(['私人笔记', '提醒', '任务']);
+    expect(searchState(state, 'shared-key').map((item) => item.type)).toEqual(['记事', '私人笔记', '提醒', '任务']);
   });
 
   it('searches limited tasks by due date range', () => {

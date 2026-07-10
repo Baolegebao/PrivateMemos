@@ -30,11 +30,9 @@ function nowIso(): string {
 }
 
 function defaultState(): AppState {
-  const now = nowIso();
   const mainBook = createLedgerBook('日常账本');
   const self = createLedgerPerson('本人');
   const categories = createDefaultLedgerCategories();
-  const food = categories.find((category) => category.name === '餐饮') ?? categories[0];
   return {
     displayName: '我',
     theme: 'system',
@@ -56,26 +54,8 @@ function defaultState(): AppState {
     language: 'zh-CN',
     showLunarCalendar: true,
     launchAtLogin: false,
-    notes: [
-      {
-        id: id('note'),
-        body: '今天开始记录 Private Memos 的第一条记事。',
-        highlighted: true,
-        createdAt: now,
-        updatedAt: now
-      }
-    ],
-    privateNotes: [
-      {
-        id: id('pnote'),
-        title: '私人笔记示例',
-        body: '这里可以保存带标题的私人内容，锁定后避免误改。',
-        highlighted: false,
-        locked: false,
-        createdAt: now,
-        updatedAt: now
-      }
-    ],
+    notes: [],
+    privateNotes: [],
     focusNotes: [],
     clipboardItems: [],
     clipboardSaveDirectory: '',
@@ -85,39 +65,13 @@ function defaultState(): AppState {
     defaultExportDirectory: '',
     countdownTimers: [createCountdownTimer()],
     stopwatch: { elapsedSeconds: 0, running: false },
-    reminders: [
-      {
-        id: id('reminder'),
-        time: now,
-        memo: '检查今日安排',
-        repeat: 'none',
-        acknowledged: false,
-        createdAt: now,
-        updatedAt: now
-      }
-    ],
-    tasks: [
-      createTask({
-        title: '完善第一阶段 MVP',
-        type: 'limited',
-        dueAt: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
-        steps: ['搭建工程', '实现核心模块', '运行测试']
-      })
-    ],
+    reminders: [],
+    tasks: [],
     ledgerBooks: [mainBook],
     ledgerPeople: [self],
     ledgerCategories: categories,
-    ledgerEntries: [
-      createLedgerEntry({
-        bookId: mainBook.id,
-        personId: self.id,
-        categoryId: food.id,
-        type: 'expense',
-        amount: 28,
-        memo: '午餐'
-      })
-    ],
-    schedules: [createScheduleItem('项目复盘')],
+    ledgerEntries: [],
+    schedules: [],
     syncQueue: [],
     syncConflicts: [],
     syncTargetUrl: '',

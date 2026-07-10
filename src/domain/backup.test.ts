@@ -16,12 +16,12 @@ describe('state backup', () => {
     const backup = buildStateBackup({
       ...baseState(),
       cloudSyncRememberCredentials: true,
-      cloudSyncSavedPassword: 'secret-password',
-      cloudSyncSavedPassphrase: 'secret-passphrase'
+      cloudSyncSavedPassword: 'local-password',
+      cloudSyncSavedPassphrase: 'local-passphrase'
     });
 
-    expect(backup).not.toContain('secret-password');
-    expect(backup).not.toContain('secret-passphrase');
+    expect(backup).not.toContain('local-password');
+    expect(backup).not.toContain('local-passphrase');
     expect(parseStateBackup(backup).cloudSyncRememberCredentials).toBe(false);
   });
 

@@ -14,7 +14,7 @@ await cp(path.join(root, 'assets', 'private-memos.ico'), path.join(target, 'asse
 await writeFile(path.join(target, 'package.json'), `${JSON.stringify({
   name: 'private-memos-desktop',
   productName: 'Private Memos',
-  version: '0.3.0',
+  version: '0.3.1',
   private: true,
   type: 'module',
   main: 'dist-electron/main.js',
@@ -25,6 +25,7 @@ await writeFile(path.join(target, 'package.json'), `${JSON.stringify({
     files: [
       'dist/**',
       'dist-electron/**',
+      'assets/**',
       'node_modules/**',
       'package.json'
     ],

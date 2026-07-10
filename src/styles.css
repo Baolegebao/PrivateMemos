@@ -2331,6 +2331,17 @@ pre,
   border-top: 1px solid #d9dfd7;
 }
 
+.section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-heading-row h2 {
+  margin: 0;
+}
+
 .sync-target {
   display: grid;
   gap: 8px;
