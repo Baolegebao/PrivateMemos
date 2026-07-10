@@ -7,9 +7,6 @@ export function canDeleteLedgerBook(state: AppState, bookId: string) {
   if (state.ledgerBooks.length <= 1) {
     return { ok: false, reason: '至少保留一个账本' };
   }
-  if (state.ledgerEntries.some((entry) => entry.bookId === bookId)) {
-    return { ok: false, reason: '该账本仍有账目，不能删除' };
-  }
   return { ok: true };
 }
 

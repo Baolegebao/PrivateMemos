@@ -7,9 +7,9 @@ describe('ledger helpers', () => {
     expect(canDeleteLedgerBook(baseState(), 'b2')).toEqual({ ok: true });
   });
 
-  it('prevents deleting the only book or a book with entries', () => {
+  it('prevents deleting the only book but allows deleting a book with entries', () => {
     expect(canDeleteLedgerBook({ ...baseState(), ledgerBooks: [book('b1')] }, 'b1')).toEqual({ ok: false, reason: '至少保留一个账本' });
-    expect(canDeleteLedgerBook({ ...baseState(), ledgerEntries: [entry('e1', 'b2')] }, 'b2')).toEqual({ ok: false, reason: '该账本仍有账目，不能删除' });
+    expect(canDeleteLedgerBook({ ...baseState(), ledgerEntries: [entry('e1', 'b2')] }, 'b2')).toEqual({ ok: true });
   });
   it('switches to a category that matches the selected entry type', () => {
     const state = {

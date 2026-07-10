@@ -105,6 +105,25 @@ describe('cloud sync encryption', () => {
     expect(merged.cloudDeletedRecords).toContainEqual({ entity: 'notes', recordId: 'note_1', deletedAt: '2026-07-02T00:00:00.000Z' });
   });
 
+  it('cascades ledger book deletion through ledger entry tombstones', () => {
+    const book = { id: 'book_1', name: 'book', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z' };
+    const keptBook = { id: 'book_2', name: 'kept book', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z' };
+    const entry = { id: 'entry_1', bookId: 'book_1', personId: 'person_1', categoryId: 'category_1', type: 'expense' as const, amount: 12, date: '2026-07-01T00:00:00.000Z', memo: '', createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-01T00:00:00.000Z' };
+    const before = normalizeState({ ledgerBooks: [book, keptBook], ledgerEntries: [entry] });
+    const after = withCloudDeletionTombstones(before, normalizeState({ ...before, ledgerBooks: [keptBook], ledgerEntries: [] }), '2026-07-02T00:00:00.000Z');
+    const merged = mergeCloudRecords(normalizeState({ ledgerBooks: [book, keptBook], ledgerEntries: [entry] }), [
+      { entity: 'ledgerBooks', recordId: 'book_1', recordUpdatedAt: '2026-07-02T00:00:00.000Z', deleted: true, record: null },
+      { entity: 'ledgerEntries', recordId: 'entry_1', recordUpdatedAt: '2026-07-02T00:00:00.000Z', deleted: true, record: null }
+    ]);
+
+    expect(after.cloudDeletedRecords).toEqual(expect.arrayContaining([
+      { entity: 'ledgerBooks', recordId: 'book_1', deletedAt: '2026-07-02T00:00:00.000Z' },
+      { entity: 'ledgerEntries', recordId: 'entry_1', deletedAt: '2026-07-02T00:00:00.000Z' }
+    ]));
+    expect(merged.ledgerBooks.some((item) => item.id === 'book_1')).toBe(false);
+    expect(merged.ledgerEntries.some((item) => item.id === 'entry_1')).toBe(false);
+  });
+
   it('keeps a newer local note when cloud has an older copy', () => {
     const current = normalizeState({
       notes: [{ id: 'note_1', body: 'local edit', highlighted: false, createdAt: '2026-07-01T00:00:00.000Z', updatedAt: '2026-07-02T00:00:00.000Z' }]

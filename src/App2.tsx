@@ -69,7 +69,7 @@ import { formatDateTime, formatLunarDate, groupByView, todayIso, toLocalDateKey 
 import { buildStateBackup, parseStateBackup } from './domain/backup';
 import { mergeCloudStates, syncCloudRecords, withCloudDeletionTombstones } from './domain/cloudSync';
 import { buildDocx, buildDocxFromParagraphs, type DocxParagraph } from './domain/exporters';
-import { buildLedgerTypePatch } from './domain/ledger';
+import { buildLedgerTypePatch, canDeleteLedgerBook } from './domain/ledger';
 import { isMobileApp, loadMobileState, saveMobileState } from './domain/mobileStorage';
 import { applyDueReminder } from './domain/reminders';
 import { rolloverRecurringTasks } from './domain/tasks';
@@ -113,6 +113,7 @@ import type {
   ClipboardEntry,
   ClipboardEntryType,
   CountdownTimer,
+  DatedEntity,
   LedgerEntry,
   LedgerEntryType,
   LedgerPeriod,
@@ -481,6 +482,52 @@ function getCloudSyncChangeKey(state: AppState) {
   });
 }
 
+type SyncUpdateCollectionKey = keyof Pick<AppState, 'notes' | 'privateNotes' | 'focusNotes' | 'reminders' | 'tasks' | 'ledgerBooks' | 'ledgerPeople' | 'ledgerCategories' | 'ledgerEntries' | 'schedules' | 'countdownTimers'>;
+
+interface SyncUpdateStat {
+  label: string;
+  count: number;
+}
+
+const SYNC_UPDATE_COLLECTIONS: Array<{ key: SyncUpdateCollectionKey; label: string }> = [
+  { key: 'notes', label: '记事' },
+  { key: 'privateNotes', label: '私人笔记' },
+  { key: 'focusNotes', label: '重点' },
+  { key: 'reminders', label: '提醒' },
+  { key: 'tasks', label: '任务' },
+  { key: 'ledgerBooks', label: '记账' },
+  { key: 'ledgerPeople', label: '记账' },
+  { key: 'ledgerCategories', label: '记账' },
+  { key: 'ledgerEntries', label: '记账' },
+  { key: 'schedules', label: '日程' },
+  { key: 'countdownTimers', label: '计时器' }
+];
+
+function getSyncCollection(state: AppState, key: SyncUpdateCollectionKey): DatedEntity[] {
+  return ((state[key] ?? []) as DatedEntity[]);
+}
+
+function countCollectionChanges(before: DatedEntity[], after: DatedEntity[]) {
+  const beforeMap = new Map(before.map((item) => [item.id, JSON.stringify(item)]));
+  const afterMap = new Map(after.map((item) => [item.id, JSON.stringify(item)]));
+  const ids = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+  return [...ids].filter((id) => beforeMap.get(id) !== afterMap.get(id)).length;
+}
+
+function getSyncUpdateStats(before: AppState, after: AppState): SyncUpdateStat[] {
+  const counts = new Map<string, number>();
+  SYNC_UPDATE_COLLECTIONS.forEach(({ key, label }) => {
+    const count = countCollectionChanges(getSyncCollection(before, key), getSyncCollection(after, key));
+    if (count > 0) counts.set(label, (counts.get(label) ?? 0) + count);
+  });
+  return [...counts.entries()].map(([label, count]) => ({ label, count }));
+}
+
+function formatSyncUpdateToast(stats: SyncUpdateStat[]) {
+  if (stats.length === 0) return '';
+  return `已更新${stats.map((item) => `${item.label} ${item.count} 条`).join('、')}`;
+}
+
 export function App() {
   const mobileApp = isMobileApp();
   const [state, setState] = useState<AppState>(() => loadState());
@@ -493,11 +540,14 @@ export function App() {
   const [notifiedReminderIds, setNotifiedReminderIds] = useState<string[]>([]);
   const [dialogRequest, setDialogRequest] = useState<DialogRequest | undefined>();
   const [manualSyncing, setManualSyncing] = useState(false);
+  const [syncToast, setSyncToast] = useState('');
   const lastClipboardSignature = useRef('');
   const stateRef = useRef(state);
   const previousCloudState = useRef<AppState | undefined>();
   const cloudSyncBusy = useRef(false);
   const cloudSyncPending = useRef(false);
+  const cloudSyncActive = useRef<Promise<SyncUpdateStat[] | undefined> | undefined>();
+  const syncToastTimer = useRef<number | undefined>();
   const pullRefreshStartY = useRef<number | undefined>();
   const pullRefreshTriggered = useRef(false);
   const globalResults = useMemo(() => searchState(state, globalQuery), [state, globalQuery]);
@@ -507,6 +557,10 @@ export function App() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => () => {
+    if (syncToastTimer.current) window.clearTimeout(syncToastTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!desktopDataLoaded) return;
@@ -590,21 +644,30 @@ export function App() {
     cloudRuntime.passphrase
   );
 
-  async function runCloudRecordSync(silent = false, overrideState?: AppState, force = false) {
+  function showSyncToast(stats?: SyncUpdateStat[]) {
+    const message = formatSyncUpdateToast(stats ?? []);
+    if (!message) return;
+    if (syncToastTimer.current) window.clearTimeout(syncToastTimer.current);
+    setSyncToast(message);
+    syncToastTimer.current = window.setTimeout(() => setSyncToast(''), 2600);
+  }
+
+  async function runCloudRecordSync(silent = false, overrideState?: AppState, force = false): Promise<SyncUpdateStat[] | undefined> {
     if (!hasCloudRuntime) return;
     if (cloudSyncBusy.current) {
       if (force) cloudSyncPending.current = true;
-      return;
+      return cloudSyncActive.current;
     }
     cloudSyncBusy.current = true;
-    const syncState = overrideState ?? stateRef.current;
-    try {
+    const syncOnce = async (sourceState: AppState, notify: boolean): Promise<SyncUpdateStat[] | undefined> => {
       const result = await syncCloudRecords({
-        url: syncState.cloudSyncUrl ?? '',
-        publishableKey: syncState.cloudSyncPublishableKey ?? '',
+        url: sourceState.cloudSyncUrl ?? '',
+        publishableKey: sourceState.cloudSyncPublishableKey ?? '',
         passphrase: cloudRuntime.passphrase
-      }, syncState);
+      }, sourceState);
       const syncedAt = result.updatedAt ?? new Date().toISOString();
+      const syncedState = mergeCloudStates(sourceState, result.state);
+      const stats = getSyncUpdateStats(sourceState, syncedState);
       setState((current) => {
         const mergedState = mergeCloudStates(current, result.state);
         return normalizeState({
@@ -622,17 +685,29 @@ export function App() {
           cloudSyncLastError: ''
         });
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '云端逐条同步失败。';
-      setState((current) => ({ ...current, cloudSyncLastError: message }));
-      if (!silent) await appAlert(message);
-    } finally {
-      cloudSyncBusy.current = false;
-      if (cloudSyncPending.current) {
-        cloudSyncPending.current = false;
-        window.setTimeout(() => void runCloudRecordSync(true), 0);
+      return notify ? stats : undefined;
+    };
+    const syncTask = (async () => {
+      let stats: SyncUpdateStat[] | undefined;
+      try {
+        stats = await syncOnce(overrideState ?? stateRef.current, !silent);
+        while (cloudSyncPending.current) {
+          cloudSyncPending.current = false;
+          await syncOnce(stateRef.current, false);
+        }
+        return stats;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '云端逐条同步失败。';
+        setState((current) => ({ ...current, cloudSyncLastError: message }));
+        if (!silent) await appAlert(message);
+        return undefined;
+      } finally {
+        cloudSyncBusy.current = false;
+        cloudSyncActive.current = undefined;
       }
-    }
+    })();
+    cloudSyncActive.current = syncTask;
+    return syncTask;
   }
 
   async function refreshCloudSync() {
@@ -642,7 +717,7 @@ export function App() {
     }
     setManualSyncing(true);
     try {
-      await runCloudRecordSync(false, undefined, true);
+      showSyncToast(await runCloudRecordSync(false, undefined, true));
     } finally {
       setManualSyncing(false);
     }
@@ -900,7 +975,7 @@ export function App() {
         </label>}
         <div className="topbar-actions">
           {hasCloudRuntime && (
-            <button className={manualSyncing ? 'topbar-icon-button active' : 'topbar-icon-button'} type="button" aria-label="刷新同步" onClick={() => void refreshCloudSync()}>
+            <button className={manualSyncing ? 'topbar-icon-button active syncing' : 'topbar-icon-button'} type="button" aria-label="刷新同步" onClick={() => void refreshCloudSync()} disabled={manualSyncing}>
               <RotateCcw size={18} />
             </button>
           )}
@@ -952,6 +1027,7 @@ export function App() {
           {!mobileApp && activeModule === 'account' && <AccountPanelV2 state={state} setState={setState} />}
         </section>
       </main>
+      {syncToast && <div className="sync-toast" role="status">{syncToast}</div>}
       <AppDialog request={dialogRequest} onClose={() => setDialogRequest(undefined)} />
     </div>
     </TextContext.Provider>
@@ -2433,7 +2509,6 @@ function LedgerPanel({ state, setState }: StatePanelProps) {
   const [selectedPersonId, setSelectedPersonId] = useState<string | undefined>();
   const [editingEntryId, setEditingEntryId] = useState<string | undefined>();
   const [draftEntry, setDraftEntry] = useState<LedgerEntry | undefined>();
-  const [deleteBookPassword, setDeleteBookPassword] = useState<string | undefined>();
   const [mobileLedgerView, setMobileLedgerView] = useState<'entries' | 'summary'>('entries');
   const entries = filterLedgerEntries(state, getLedgerEntries(state, bookId, period), {
     query: ledgerQuery,
@@ -2545,18 +2620,18 @@ function LedgerPanel({ state, setState }: StatePanelProps) {
       await appAlert('请先选择一个账本。');
       return;
     }
-    if (!state.passwordHash) {
-      await appAlert('请先在账号模块设置密码。');
+    const result = canDeleteLedgerBook(state, bookId);
+    if (!result.ok) {
+      await appAlert(result.reason ?? '当前账本不能删除。');
       return;
     }
-    setDeleteBookPassword('');
-  }
-
-  async function confirmDeleteBook() {
-    const password = deleteBookPassword;
-    if (!password) return;
-    if (await hashPassword(password) !== state.passwordHash) {
-      await appAlert('密码不正确。');
+    const book = state.ledgerBooks.find((item) => item.id === bookId);
+    if (!book) return;
+    const entryCount = state.ledgerEntries.filter((entry) => entry.bookId === bookId).length;
+    const message = entryCount > 0
+      ? `删除账本「${book.name}」会同时删除 ${entryCount} 笔账目，并同步到其他设备。请问是否删除？`
+      : `删除账本「${book.name}」后会同步到其他设备。请问是否删除？`;
+    if (!(await appConfirm(message, { title: '删除账本确认', confirmLabel: '删除', danger: true }))) {
       return;
     }
     const nextBook = state.ledgerBooks.find((book) => book.id !== bookId);
@@ -2566,7 +2641,6 @@ function LedgerPanel({ state, setState }: StatePanelProps) {
       ledgerEntries: current.ledgerEntries.filter((entry) => entry.bookId !== bookId)
     }));
     setBookId(nextBook?.id ?? 'all');
-    setDeleteBookPassword(undefined);
     if (selected?.bookId === bookId) setSelectedId(undefined);
   }
 
@@ -2649,19 +2723,6 @@ function LedgerPanel({ state, setState }: StatePanelProps) {
           <div className="modal-actions">
             <button className="toolbar-button" type="button" onClick={cancelLedgerEdit}>取消</button>
             <button className="toolbar-button active" type="button" onClick={() => void confirmLedgerEdit(editingEntry)}>确认</button>
-          </div>
-        </section>
-      </div>
-    )}
-    {deleteBookPassword !== undefined && (
-      <div className="modal-backdrop" role="presentation">
-        <section className="modal-panel confirm-password-modal" role="dialog" aria-modal="true" aria-label="删除账本确认">
-          <h2>删除账本</h2>
-          <p className="muted">所有该账本下数据都会被删除，请输入密码确认。</p>
-          <input type="password" value={deleteBookPassword} onChange={(event) => setDeleteBookPassword(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void confirmDeleteBook(); }} autoFocus />
-          <div className="modal-actions">
-            <button className="toolbar-button" type="button" onClick={() => setDeleteBookPassword(undefined)}>取消</button>
-            <button className="toolbar-button danger-action" type="button" onClick={() => void confirmDeleteBook()}>确认删除</button>
           </div>
         </section>
       </div>
@@ -3279,7 +3340,7 @@ function SettingsPanelV2({ state, setState, cloudRuntime, setCloudRuntime, mobil
       <section className="sync-panel cloud-sync-settings">
         <div className="section-heading-row">
           <h2>云端同步</h2>
-          <button className="toolbar-button icon-only" type="button" aria-label="刷新同步" onClick={() => void onSyncRefresh()}>
+          <button className={cloudSyncing ? 'toolbar-button icon-only syncing' : 'toolbar-button icon-only'} type="button" aria-label="刷新同步" onClick={() => void onSyncRefresh()} disabled={cloudSyncing}>
             <RotateCcw size={16} />
           </button>
         </div>

@@ -322,6 +322,39 @@ button {
   color: #ffffff;
 }
 
+.topbar-icon-button:disabled,
+.toolbar-button:disabled {
+  cursor: wait;
+  opacity: 0.88;
+}
+
+.syncing svg {
+  animation: sync-rotate 0.8s linear infinite;
+}
+
+@keyframes sync-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sync-toast {
+  position: fixed;
+  top: 92px;
+  right: 28px;
+  z-index: 20;
+  max-width: min(460px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1px solid #d5ddd3;
+  border-radius: 8px;
+  background: #23372e;
+  color: #fff7d8;
+  box-shadow: 0 14px 32px rgb(21 31 27 / 24%);
+  font-weight: 700;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
 .global-results {
   position: absolute;
   top: 58px;
@@ -2891,5 +2924,14 @@ pre,
   .mobile-app-shell .ledger-chart-row {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  .mobile-app-shell .sync-toast {
+    top: auto;
+    right: 14px;
+    bottom: 88px;
+    left: 14px;
+    max-width: none;
+    text-align: center;
   }
 }
